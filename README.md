@@ -163,6 +163,108 @@ target_table.alias("target").merge(
 👉 **Running totals** are **incrementally updated** for **each merchant**.
 
 ---
+### ✅ **Quick Recap of Your Aggregation Logic**
+- `total_sales` sums `transaction_amount` where `transaction_status = 'completed'`.
+- `total_refunds` sums **negative** `transaction_amount` where `transaction_status = 'refunded'`.
+- `net_sales = total_sales + total_refunds`.
+
+---
+
+## 🔹 **Batch 1: Insert New Transactions**
+```python
+[
+    ("T001", "upi1@bank", "M001", 500.0, "2024-12-21 10:00:00", "initiated"),
+    ("T002", "upi2@bank", "M002", 1000.0, "2024-12-21 10:05:00", "initiated"),
+    ("T003", "upi3@bank", "M003", 1500.0, "2024-12-21 10:10:00", "initiated"),
+]
+```
+
+👉 All transactions are in `"initiated"` status, **no completed sales yet**, so aggregations would be:
+
+| merchant_id | total_sales | total_refunds | net_sales |
+|-------------|-------------|---------------|-----------|
+| M001        | 0           | 0             | 0         |
+| M002        | 0           | 0             | 0         |
+| M003        | 0           | 0             | 0         |
+
+---
+
+## 🔹 **Batch 2: Update and Insert Transactions**
+```python
+[
+    ("T001", "upi1@bank", "M001", 500.0, "2024-12-21 10:15:00", "completed"),  # Completed sale
+    ("T002", "upi2@bank", "M002", 1000.0, "2024-12-21 10:20:00", "failed"),     # Failed, no sales
+    ("T004", "upi4@bank", "M004", 2000.0, "2024-12-21 10:25:00", "initiated"),  # New initiated
+]
+```
+
+👉 Processed as:  
+- `T001` is now `"completed"` → 500 sales for `M001`.  
+- `T002` is `"failed"` → no sales counted.  
+- `T004` is `"initiated"` → no sales counted.
+
+➡️ Aggregated results **after Batch 2**:
+
+| merchant_id | total_sales | total_refunds | net_sales |
+|-------------|-------------|---------------|-----------|
+| M001        | 500         | 0             | 500       |
+| M002        | 0           | 0             | 0         |
+| M003        | 0           | 0             | 0         |
+| M004        | 0           | 0             | 0         |
+
+---
+
+## 🔹 **Batch 3 (Based on Your Previous Message)**  
+For reference, you mentioned:
+```python
+[
+    ("T001", "upi1@bank", "M001", 500.0, "2024-12-21 10:30:00", "refunded"),  # Refund issued
+    ("T003", "upi3@bank", "M003", 1500.0, "2024-12-21 10:35:00", "completed"), # Completed
+]
+```
+
+This changes things to:  
+- `T001` gets refunded → `-500` refund for `M001`.  
+- `T003` becomes `"completed"` → 1500 sales for `M003`.
+
+➡️ Final aggregation:
+
+| merchant_id | total_sales | total_refunds | net_sales |
+|-------------|-------------|---------------|-----------|
+| M001        | 500         | -500          | 0         |
+| M002        | 0           | 0             | 0         |
+| M003        | 1500        | 0             | 1500      |
+| M004        | 0           | 0             | 0         |
+
+---
+
+✅ **Explanation**
+- **M001**: 500 sales minus 500 refund = 0 net.  
+- **M002**: No completed sales, no refunds.  
+- **M003**: 1500 completed sales, no refunds.  
+- **M004**: No completed sales, no refunds.
+
+---
+
+## ✅ Final Aggregated Table (After Batch 3)
+| merchant_id | total_sales | total_refunds | net_sales |
+|-------------|-------------|---------------|-----------|
+| **M001**    | 500         | -500          | 0         |
+| **M002**    | 0           | 0             | 0         |
+| **M003**    | 1500        | 0             | 1500      |
+| **M004**    | 0           | 0             | 0         |
+
+---
+
+# ✅ TL;DR  
+👉 **Batch 1**: No completed transactions → everything 0.  
+👉 **Batch 2**: M001 gets 500 completed sales.  
+👉 **Batch 3**: M001 refunded 500, M003 gets 1500 completed sales.  
+✅ **Final Aggregation**: Matches your shared table!
+
+
+
+---
 
 # ✅ **Use Cases**
 - **Real-time business reporting**  
